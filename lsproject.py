@@ -56,43 +56,56 @@ def calculate_buy_score(data):
 
 # Fetch data for tickers
 def fetch_data():
-    tickers = ["AAPL", "MSFT", "GOOGL"]  # example tickers
+    tickers = ["AAPL", "MSFT", "GOOGL"]  # Example tickers
     results = []
 
     for ticker in tickers:
         print(f"Fetching data for {ticker}...")
         data = yf.download(ticker, period="6mo", interval="1d")
 
+        if data.empty:
+            print(f"⚠️ No data for {ticker}")
+            continue
+
         score = calculate_buy_score(data)
 
         if score is None:
-            print(f"Skipping {ticker} (not enough data)")
+            print(f"⚠️ Skipping {ticker} (no score)")
             continue
 
-        results.append({"Ticker": ticker, "Buy/Sell Score": score})
+        latest_price = data["Close"].iloc[-1]  # Get most recent closing price
+        results.append({
+            "Ticker": ticker,
+            "Buy/Sell Score": score,
+            "Price": latest_price
+        })
 
     df = pd.DataFrame(results)
 
     if df.empty:
-        print("⚠️ No data available for any ticker. Skipping plot.")
-        return df  # Prevents plot_scores from breaking
-
+        print("⚠️ No data available for any ticker.")
     return df
 
 
 
 # Generate a PDF report
 def generate_pdf(df):
+    required_columns = {"Ticker", "Buy/Sell Score", "Price"}
+    if not required_columns.issubset(df.columns):
+        print(f"⚠️ Missing required columns: {required_columns - set(df.columns)}")
+        return
+
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Arial", size=12)
-    pdf.cell(200, 10, txt="Life Science Trading Analysis", ln=True, align="C")
 
     for _, row in df.iterrows():
         pdf.cell(200, 10, txt=f"{row['Ticker']}: Score {row['Buy/Sell Score']:.2f} Price ${row['Price']:.2f}", ln=True)
 
-    pdf.output("trading_analysis.pdf")
+    pdf.output("analysis_report.pdf")
+    print("✅ PDF generated successfully.")
+
 
 # Generate graph
 def plot_scores(df):
