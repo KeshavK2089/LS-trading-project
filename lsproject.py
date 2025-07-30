@@ -78,14 +78,14 @@ def fetch_data():
             "Ticker": ticker,
             "Buy/Sell Score": score,
             "Price": latest_price
-
+})
             results.append({
     "Ticker": ticker,
     "Buy/Sell Score": float(score),
     "Price": float(latest_price)
 })
 
-        })
+    
 
     df = pd.DataFrame(results)
 
