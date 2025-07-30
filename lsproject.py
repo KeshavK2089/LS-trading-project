@@ -3,13 +3,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from fpdf import FPDF
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
-import os
 from textblob import TextBlob
 import requests
+import os
+from pathlib import Path
 
 # Top 50 life science trading tickers
 TICKERS = [
@@ -20,74 +17,69 @@ TICKERS = [
     "QURE", "SANA", "TNYA", "VERV", "XENE", "ZYME", "GLYC", "CNTB", "ASND", "RVNC"
 ]
 
-NEWS_API_KEY = os.getenv("NEWS_API_KEY", "YOUR_NEWS_API_KEY")  # Load from env if available
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "YOUR_NEWS_API_KEY")
+
 
 def fetch_fda_news_sentiment(ticker):
-    news_score = 50  # Neutral default score
+    news_score = 50  # neutral default
     try:
         url = f"https://newsapi.org/v2/everything?q={ticker}+FDA&apiKey={NEWS_API_KEY}"
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         articles = response.json().get("articles", [])
 
-        sentiment_scores = []
-        for article in articles[:5]:  # Only analyze top 5
+        scores = []
+        for article in articles[:5]:
             headline = article.get("title", "")
             if headline:
                 sentiment = TextBlob(headline).sentiment.polarity
-                sentiment_scores.append(sentiment)
+                scores.append(sentiment)
 
-        if sentiment_scores:
-            avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
-            news_score = int((avg_sentiment + 1) * 50)  # -1→1 to 0→100 scale
-    except Exception as e:
-        print(f"⚠️ News sentiment fetch failed for {ticker}: {e}")
+        if scores:
+            avg_sent = sum(scores) / len(scores)
+            news_score = int((avg_sent + 1) * 50)  # scale -1→1 to 0→100
+    except Exception:
+        pass
 
     return max(1, min(news_score, 100))
 
+
 def calculate_buy_score(data, ticker):
     close_prices = data["Close"]
-
     if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
 
     if len(close_prices) < 20:
-        print(f"⚠️ Not enough data to calculate score for {ticker}")
         return None
 
-    # Price momentum
     short_return = (close_prices.iloc[-1] / close_prices.iloc[-5]) - 1
     medium_return = (close_prices.iloc[-1] / close_prices.iloc[-20]) - 1
 
-    # Volatility
     daily_returns = close_prices.pct_change().dropna()
     volatility = daily_returns.rolling(window=20).std().iloc[-1]
 
     if pd.isna(volatility) or volatility == 0:
         return None
 
-    # Normalize scores
     momentum_score = min(max((short_return + medium_return) * 5000, 1), 100)
     volatility_score = max(1, min(100, 100 - (volatility * 1000)))
     news_score = fetch_fda_news_sentiment(ticker)
 
-    # Weighted score
-    final_score = int((0.4 * momentum_score) + (0.2 * volatility_score) + (0.4 * news_score))
+    final_score = int(
+        (0.4 * momentum_score) + (0.2 * volatility_score) + (0.4 * news_score)
+    )
     return final_score
+
 
 def fetch_data():
     results = []
     for ticker in TICKERS:
-        print(f"Fetching data for {ticker}...")
         data = yf.download(ticker, period="6mo", interval="1d", progress=False)
-
         if data.empty:
-            print(f"⚠️ No data for {ticker}")
             continue
 
         score = calculate_buy_score(data, ticker)
         if score is None:
-            print(f"⚠️ Skipping {ticker} (not enough data)")
             continue
 
         latest_price = data["Close"].iloc[-1]
@@ -97,15 +89,12 @@ def fetch_data():
             "Price": float(latest_price)
         })
 
-    df = pd.DataFrame(results)
-    if df.empty:
-        print("⚠️ No data available for any ticker.")
-    return df
+    return pd.DataFrame(results)
+
 
 def generate_pdf(df):
-    required_columns = {"Ticker", "Buy/Sell Score", "Price"}
-    if not required_columns.issubset(df.columns):
-        print(f"⚠️ Missing required columns: {required_columns - set(df.columns)}")
+    required_cols = {"Ticker", "Buy/Sell Score", "Price"}
+    if not required_cols.issubset(df.columns):
         return
 
     pdf = FPDF()
@@ -117,14 +106,17 @@ def generate_pdf(df):
     pdf.ln(10)
 
     for _, row in df.iterrows():
-        pdf.cell(200, 10, txt=f"{row['Ticker']}: Score {row['Buy/Sell Score']:.2f} Price ${row['Price']:.2f}", ln=True)
+        pdf.cell(
+            200, 10,
+            txt=f"{row['Ticker']}: Score {row['Buy/Sell Score']:.2f} Price ${row['Price']:.2f}",
+            ln=True
+        )
 
     pdf.output("analysis_report.pdf")
-    print("✅ PDF generated successfully.")
+
 
 def plot_scores(df):
     if df.empty:
-        print("⚠️ No data to plot.")
         return
     plt.figure(figsize=(12, 6))
     plt.bar(df["Ticker"], df["Buy/Sell Score"])
@@ -134,43 +126,41 @@ def plot_scores(df):
     plt.title("Life Science Buy/Sell Analysis")
     plt.tight_layout()
     plt.savefig("trading_chart.png")
-    print("✅ Chart generated successfully.")
-    
-# --- NEW: move outputs into a folder GitHub Pages will publish ---
-from pathlib import Path
-output_dir = Path("site")          # this folder will be pushed to gh-pages
-output_dir.mkdir(exist_ok=True)
-
-Path("analysis_report.pdf").rename(output_dir / "analysis_report.pdf")
-Path("trading_chart.png").rename(output_dir / "trading_chart.png")
-# --- NEW: create a super-simple index page ---
-index_html = output_dir / "index.html"
-index_html.write_text(f"""
-<!DOCTYPE html>
-<html>
-  <head><title>Life-Science Reports</title></head>
-  <body style="font-family: Arial; padding: 2rem;">
-    <h1>Life-Science Trading Analysis</h1>
-    <p>Latest build: {pd.Timestamp.now().date()}</p>
-    <ul>
-      <li><a href="analysis_report.pdf">Download the PDF report</a></li>
-      <li><a href="trading_chart.png">View the PNG chart</a></li>
-    </ul>
-  </body>
-</html>
-""")
-
 
 
 def main():
     df = fetch_data()
     if df.empty:
-        print("No data to plot.")
-        return
-    plot_scores(df)
-    generate_pdf(df)
-    send_email_report()
-    print("✅ Analysis complete.")
+        print("⚠️ No data available.")
+    else:
+        plot_scores(df)
+        generate_pdf(df)
+
+    # Move any existing outputs into the 'site' folder (NEW FIX)
+    output_dir = Path("site")
+    output_dir.mkdir(exist_ok=True)
+
+    for file_name in ("analysis_report.pdf", "trading_chart.png"):
+        src = Path(file_name)
+        if src.exists():  # <--- prevents FileNotFoundError
+            src.rename(output_dir / src.name)
+
+    # Create a basic index.html if any files exist
+    index_html = output_dir / "index.html"
+    index_html.write_text(f"""
+    <html>
+      <head><title>Life Science Report</title></head>
+      <body style="font-family: Arial; padding: 2rem;">
+        <h1>Life Science Trading Analysis</h1>
+        <p>Last updated: {pd.Timestamp.now().date()}</p>
+        <ul>
+          {"<li><a href='analysis_report.pdf'>PDF Report</a></li>" if (output_dir / "analysis_report.pdf").exists() else ""}
+          {"<li><a href='trading_chart.png'>Chart</a></li>" if (output_dir / "trading_chart.png").exists() else ""}
+        </ul>
+      </body>
+    </html>
+    """)
+
 
 if __name__ == "__main__":
     main()
