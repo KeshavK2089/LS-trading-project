@@ -135,7 +135,30 @@ def plot_scores(df):
     plt.tight_layout()
     plt.savefig("trading_chart.png")
     print("✅ Chart generated successfully.")
+    
+# --- NEW: move outputs into a folder GitHub Pages will publish ---
+from pathlib import Path
+output_dir = Path("site")          # this folder will be pushed to gh-pages
+output_dir.mkdir(exist_ok=True)
 
+Path("analysis_report.pdf").rename(output_dir / "analysis_report.pdf")
+Path("trading_chart.png").rename(output_dir / "trading_chart.png")
+# --- NEW: create a super-simple index page ---
+index_html = output_dir / "index.html"
+index_html.write_text(f"""
+<!DOCTYPE html>
+<html>
+  <head><title>Life-Science Reports</title></head>
+  <body style="font-family: Arial; padding: 2rem;">
+    <h1>Life-Science Trading Analysis</h1>
+    <p>Latest build: {pd.Timestamp.now().date()}</p>
+    <ul>
+      <li><a href="analysis_report.pdf">Download the PDF report</a></li>
+      <li><a href="trading_chart.png">View the PNG chart</a></li>
+    </ul>
+  </body>
+</html>
+""")
 
 
 
