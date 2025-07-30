@@ -56,30 +56,28 @@ def calculate_buy_score(data):
 
 # Fetch data for tickers
 def fetch_data():
-    tickers = ["AAPL", "MSFT", "GOOG"]  # Example tickers
+    tickers = ["AAPL", "MSFT", "GOOGL"]  # example tickers
     results = []
 
     for ticker in tickers:
+        print(f"Fetching data for {ticker}...")
         data = yf.download(ticker, period="6mo", interval="1d")
-
-        if data.empty:
-            print(f"⚠️ No data for {ticker}, skipping...")
-            continue
 
         score = calculate_buy_score(data)
 
-        # Skip tickers with insufficient data (moving average was NaN)
         if score is None:
-            print(f"⚠️ Not enough data for {ticker} to calculate score, skipping...")
+            print(f"Skipping {ticker} (not enough data)")
             continue
 
-        results.append({
-            "Ticker": ticker,
-            "Score": score,
-            "Last Close": data['Close'].iloc[-1]
-        })
+        results.append({"Ticker": ticker, "Buy/Sell Score": score})
 
-    return pd.DataFrame(results)
+    df = pd.DataFrame(results)
+
+    if df.empty:
+        print("⚠️ No data available for any ticker. Skipping plot.")
+        return df  # Prevents plot_scores from breaking
+
+    return df
 
 
 
@@ -141,8 +139,9 @@ def main():
     df = fetch_data()
 
     if df.empty:
-        print("⚠️ No valid data for any tickers.")
+        print("No data to plot.")
         return
+
 
     plot_scores(df)
     generate_pdf(df)
