@@ -20,24 +20,36 @@ TICKERS = [
 
 # Calculate buy/sell score
 def calculate_buy_score(data):
-    if data is None or data.empty:
+    if data is None or data.empty or len(data) < 5:  # Require at least 5 days of data
         return None
 
-    close_prices = data['Close']
+    close_prices = data['Close'].dropna()
+    if close_prices.empty:
+        return None
+
     momentum = (close_prices.iloc[-1] - close_prices.iloc[0]) / close_prices.iloc[0]
     volatility = close_prices.pct_change().std() * np.sqrt(252)
 
-    # FIX: Extract single numeric value from the rolling average
-    moving_avg = close_prices.rolling(window=20).mean()
-    moving_avg_value = moving_avg.iloc[-1] if not moving_avg.empty else 0
+    # Calculate rolling average only if there are enough data points
+    if len(close_prices) >= 20:
+        moving_avg = close_prices.rolling(window=20).mean()
+        moving_avg_value = moving_avg.iloc[-1]
+        if pd.isna(moving_avg_value):
+            moving_avg_value = close_prices.mean()  # fallback to average price
+    else:
+        # Fallback: use simple average if less than 20 days of data
+        moving_avg_value = close_prices.mean()
+
+    # Ensure scalar comparison
+    moving_avg_value = float(moving_avg_value)
 
     score = (momentum * 50) + (1 / (volatility + 1e-6) * 30)
 
-    # FIX: Now comparing scalars
     if close_prices.iloc[-1] > moving_avg_value:
         score += 20
 
     return min(max(score, 0), 100)
+
 
 
 
