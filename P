@@ -1,3 +1,0 @@
-git add .
-git commit -m "Initial commit: trading model and requirements"
-git push origin main
