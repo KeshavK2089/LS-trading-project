@@ -136,43 +136,7 @@ def plot_scores(df):
     plt.savefig("trading_chart.png")
     print("✅ Chart generated successfully.")
 
-import ssl
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
-import os
 
-def send_email_report():
-    email_user = os.getenv("EMAIL_USER", "animalcafe98398@gmail.com")
-    email_password = os.getenv("EMAIL_PASS", "hfxc ozcr pojb qwzu")
-    email_to = "keshavkotteswaran@gmail.com"
-
-    # ---------- build the email ----------
-    msg = MIMEMultipart()
-    msg["From"] = email_user
-    msg["To"] = email_to
-    msg["Subject"] = "Daily Life-Science Trading Analysis"
-
-    for file in ["analysis_report.pdf", "trading_chart.png"]:
-        if os.path.exists(file):
-            with open(file, "rb") as f:
-                part = MIMEBase("application", "octet-stream")
-                part.set_payload(f.read())
-                encoders.encode_base64(part)
-                part.add_header("Content-Disposition",
-                                f'attachment; filename="{file}"')
-                msg.attach(part)
-        else:
-            print(f"⚠️  File not found: {file}")
-
-    # ---------- send it via Gmail ----------
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
-        server.login(email_user, email_password)      # 16-char App Password
-        server.sendmail(email_user, email_to, msg.as_string())
-
-    print("✅  Email sent successfully!")
 
 
 def main():
