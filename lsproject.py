@@ -59,12 +59,14 @@ def fetch_data():
     for ticker in TICKERS:
         print(f"Processing {ticker}...")
         data = yf.download(ticker, period="6mo", interval="1d")
-        if data.empty:
-            print(f"⚠️ Skipping {ticker}: No price data found.")
+
+        if data.empty or len(data) < 5:
+            print(f"⚠️ Skipping {ticker}: Not enough data.")
             continue
 
         score = calculate_buy_score(data)
         if score is None:
+            print(f"⚠️ Skipping {ticker}: Unable to calculate score.")
             continue
 
         results.append({
@@ -72,7 +74,13 @@ def fetch_data():
             "Buy/Sell Score": score,
             "Price": data['Close'].iloc[-1]
         })
+
+    if not results:
+        print("⚠️ No valid tickers found.")
+        return pd.DataFrame(columns=["Ticker", "Buy/Sell Score", "Price"])
+
     return pd.DataFrame(results)
+
 
 # Generate a PDF report
 def generate_pdf(df):
