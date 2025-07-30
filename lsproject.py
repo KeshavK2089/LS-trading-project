@@ -8,6 +8,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import os
+from textblob import TextBlob
+import requests
 
 # Top 50 life science trading tickers
 TICKERS = [
@@ -18,46 +20,39 @@ TICKERS = [
     "QURE", "SANA", "TNYA", "VERV", "XENE", "ZYME", "GLYC", "CNTB", "ASND", "RVNC"
 ]
 
-from textblob import TextBlob
-import requests
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "YOUR_NEWS_API_KEY")  # Load from env if available
 
 def fetch_fda_news_sentiment(ticker):
-    """
-    Fetch recent FDA-related news for the company and analyze sentiment.
-    This is a simplified example – in production, integrate with a proper news API.
-    """
     news_score = 50  # Neutral default score
-
     try:
-        # Example: Fetch from Google News API or a custom FDA news scraper
-        url = f"https://newsapi.org/v2/everything?q={ticker}+FDA&apiKey=YOUR_NEWS_API_KEY"
-        response = requests.get(url)
+        url = f"https://newsapi.org/v2/everything?q={ticker}+FDA&apiKey={NEWS_API_KEY}"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
         articles = response.json().get("articles", [])
 
         sentiment_scores = []
-        for article in articles[:5]:  # Only analyze the 5 most recent
-            headline = article["title"]
-            sentiment = TextBlob(headline).sentiment.polarity  # -1 to 1
-            sentiment_scores.append(sentiment)
+        for article in articles[:5]:  # Only analyze top 5
+            headline = article.get("title", "")
+            if headline:
+                sentiment = TextBlob(headline).sentiment.polarity
+                sentiment_scores.append(sentiment)
 
         if sentiment_scores:
             avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
-            news_score = int((avg_sentiment + 1) * 50)  # Convert -1→1 into 0→100 scale
-
+            news_score = int((avg_sentiment + 1) * 50)  # -1→1 to 0→100 scale
     except Exception as e:
         print(f"⚠️ News sentiment fetch failed for {ticker}: {e}")
 
     return max(1, min(news_score, 100))
 
-
 def calculate_buy_score(data, ticker):
-    close_prices = data['Close']
+    close_prices = data["Close"]
 
     if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
 
     if len(close_prices) < 20:
-        print("⚠️ Not enough data to calculate score.")
+        print(f"⚠️ Not enough data to calculate score for {ticker}")
         return None
 
     # Price momentum
@@ -68,45 +63,34 @@ def calculate_buy_score(data, ticker):
     daily_returns = close_prices.pct_change().dropna()
     volatility = daily_returns.rolling(window=20).std().iloc[-1]
 
-    if pd.isna(volatility):
+    if pd.isna(volatility) or volatility == 0:
         return None
 
     # Normalize scores
     momentum_score = min(max((short_return + medium_return) * 5000, 1), 100)
-    volatility_score = max(1, 100 - (volatility * 1000))
+    volatility_score = max(1, min(100, 100 - (volatility * 1000)))
     news_score = fetch_fda_news_sentiment(ticker)
 
-    # Final weighted score
-    final_score = int((0.3 * momentum_score) + 
-                      (0.3 * momentum_score) + 
-                      (0.2 * volatility_score) + 
-                      (0.2 * news_score))
-
+    # Weighted score
+    final_score = int((0.4 * momentum_score) + (0.2 * volatility_score) + (0.4 * news_score))
     return final_score
 
-
-
-
-
-# Fetch data for tickers
 def fetch_data():
-    results = []  # Store analysis results here
-
+    results = []
     for ticker in TICKERS:
         print(f"Fetching data for {ticker}...")
-        data = yf.download(ticker, period="6mo", interval="1d")
+        data = yf.download(ticker, period="6mo", interval="1d", progress=False)
 
         if data.empty:
             print(f"⚠️ No data for {ticker}")
             continue
 
-        score = calculate_buy_score(data)
-
+        score = calculate_buy_score(data, ticker)
         if score is None:
             print(f"⚠️ Skipping {ticker} (not enough data)")
             continue
 
-        latest_price = data["Close"].iloc[-1]  # Get most recent closing price
+        latest_price = data["Close"].iloc[-1]
         results.append({
             "Ticker": ticker,
             "Buy/Sell Score": float(score),
@@ -114,15 +98,10 @@ def fetch_data():
         })
 
     df = pd.DataFrame(results)
-
     if df.empty:
         print("⚠️ No data available for any ticker.")
-    
     return df
 
-
-
-# Generate a PDF report
 def generate_pdf(df):
     required_columns = {"Ticker", "Buy/Sell Score", "Price"}
     if not required_columns.issubset(df.columns):
@@ -134,41 +113,39 @@ def generate_pdf(df):
     pdf.add_page()
     pdf.set_font("Arial", size=12)
 
+    pdf.cell(200, 10, txt="Life Science Trading Analysis", ln=True, align="C")
+    pdf.ln(10)
+
     for _, row in df.iterrows():
-        ticker = str(row["Ticker"])
-        score = float(row["Buy/Sell Score"])
-        price = float(row["Price"])
-        pdf.cell(200, 10, txt=f"{ticker}: Score {score:.2f} Price ${price:.2f}", ln=True)
+        pdf.cell(200, 10, txt=f"{row['Ticker']}: Score {row['Buy/Sell Score']:.2f} Price ${row['Price']:.2f}", ln=True)
 
     pdf.output("analysis_report.pdf")
     print("✅ PDF generated successfully.")
 
-
-
-# Generate graph
 def plot_scores(df):
+    if df.empty:
+        print("⚠️ No data to plot.")
+        return
     plt.figure(figsize=(12, 6))
-    plt.bar(df['Ticker'], df['Buy/Sell Score'])
+    plt.bar(df["Ticker"], df["Buy/Sell Score"])
     plt.xticks(rotation=90)
     plt.xlabel("Ticker")
     plt.ylabel("Buy/Sell Score (0-100)")
     plt.title("Life Science Buy/Sell Analysis")
     plt.tight_layout()
     plt.savefig("trading_chart.png")
+    print("✅ Chart generated successfully.")
 
-# Email the report
 def send_email_report():
-    # Hardcoded email credentials (for testing)
-    email_user = "animalcafe98398@gmail.com"  # Your Gmail address
-    email_password = "tqmk akth oxhl vgqk"  # Your Google App Password
-    email_to = "keshavkotteswaran@gmail.com"  # Recipient's email
+    email_user = os.getenv("EMAIL_USER", "animalcafe98398@gmail.com")
+    email_password = os.getenv("EMAIL_PASS", "tqmk akth oxhl vgqk")
+    email_to = "keshavkotteswaran@gmail.com"
 
     msg = MIMEMultipart()
     msg["From"] = email_user
     msg["To"] = email_to
     msg["Subject"] = "Daily Life Science Trading Analysis"
 
-    # Attach PDF and chart
     for file in ["analysis_report.pdf", "trading_chart.png"]:
         if os.path.exists(file):
             with open(file, "rb") as f:
@@ -180,23 +157,17 @@ def send_email_report():
         else:
             print(f"⚠️ File not found: {file}")
 
-    # Send email using Gmail SMTP
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(email_user, email_password)
         server.sendmail(email_user, email_to, msg.as_string())
         print("✅ Email sent successfully!")
 
-
-# Main function
 def main():
     df = fetch_data()
-
     if df.empty:
         print("No data to plot.")
         return
-
-
     plot_scores(df)
     generate_pdf(df)
     send_email_report()
