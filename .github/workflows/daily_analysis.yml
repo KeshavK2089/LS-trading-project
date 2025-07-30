@@ -9,7 +9,8 @@ jobs:
   run-analysis:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -22,9 +23,9 @@ jobs:
 
       - name: Run LS trading analysis
         env:
-          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}        # ✅ Match variable names in your script
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_RECIPIENTS: ${{ secrets.EMAIL_RECIPIENTS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
           python lsproject.py > analysis_output.txt
 
@@ -34,5 +35,5 @@ jobs:
           name: trading-report
           path: |
             analysis_output.txt
-            trading_report.xlsx
-            trading_report.pdf
+            trading_analysis.pdf      # ✅ Match the file names from your script
+            trading_chart.png         # ✅ Chart generated in script
