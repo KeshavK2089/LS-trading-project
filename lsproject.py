@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import os
-from textblob import textblob
+from textblob import TextBlob
 import requests
 
 # Top 50 life science trading tickers
