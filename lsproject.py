@@ -138,7 +138,7 @@ def plot_scores(df):
 
 def send_email_report():
     email_user = os.getenv("EMAIL_USER", "animalcafe98398@gmail.com")
-    email_password = os.getenv("EMAIL_PASS", "tqmk akth oxhl vgqk")
+    email_password = os.getenv("EMAIL_PASS", "hfxc ozcr pojb qwzu")
     email_to = "keshavkotteswaran@gmail.com"
 
     msg = MIMEMultipart()
@@ -157,11 +157,13 @@ def send_email_report():
         else:
             print(f"⚠️ File not found: {file}")
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.starttls()
-        server.login(email_user, email_password)
-        server.sendmail(email_user, email_to, msg.as_string())
-        print("✅ Email sent successfully!")
+import ssl
+
+context = ssl.create_default_context()
+with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
+    server.login("animalcafe98398@gmail.com", "hfxc ozcr pojb qwzu")   # ← your 16-char App Password
+    server.sendmail("animalcafe98398@gmail.com", "keshavkotteswaran@gmail.com", msg.as_string())
+
 
 def main():
     df = fetch_data()
