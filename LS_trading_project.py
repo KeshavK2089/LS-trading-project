@@ -1,5 +1,5 @@
 """
-quant_trading_project.py
+LS_trading_project.py
 ========================
 
 This module provides a simple framework for running a momentum‑style
