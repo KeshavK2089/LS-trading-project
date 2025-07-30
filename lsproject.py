@@ -18,36 +18,71 @@ TICKERS = [
     "QURE", "SANA", "TNYA", "VERV", "XENE", "ZYME", "GLYC", "CNTB", "ASND", "RVNC"
 ]
 
-# Calculate buy/sell score
-def calculate_buy_score(data):
+from textblob import TextBlob
+import requests
+
+def fetch_fda_news_sentiment(ticker):
+    """
+    Fetch recent FDA-related news for the company and analyze sentiment.
+    This is a simplified example – in production, integrate with a proper news API.
+    """
+    news_score = 50  # Neutral default score
+
+    try:
+        # Example: Fetch from Google News API or a custom FDA news scraper
+        url = f"https://newsapi.org/v2/everything?q={ticker}+FDA&apiKey=YOUR_NEWS_API_KEY"
+        response = requests.get(url)
+        articles = response.json().get("articles", [])
+
+        sentiment_scores = []
+        for article in articles[:5]:  # Only analyze the 5 most recent
+            headline = article["title"]
+            sentiment = TextBlob(headline).sentiment.polarity  # -1 to 1
+            sentiment_scores.append(sentiment)
+
+        if sentiment_scores:
+            avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+            news_score = int((avg_sentiment + 1) * 50)  # Convert -1→1 into 0→100 scale
+
+    except Exception as e:
+        print(f"⚠️ News sentiment fetch failed for {ticker}: {e}")
+
+    return max(1, min(news_score, 100))
+
+
+def calculate_buy_score(data, ticker):
     close_prices = data['Close']
 
-    # Ensure we are working with a Series
     if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
 
-    moving_avg = close_prices.rolling(window=20).mean()
-    moving_avg_value = moving_avg.iloc[-1]
-
-    # Make sure moving_avg_value is a scalar
-    if isinstance(moving_avg_value, pd.Series):
-        moving_avg_value = moving_avg_value.iloc[0]
-
-    if pd.isna(moving_avg_value):
-        print("⚠️ Not enough data to calculate moving average.")
+    if len(close_prices) < 20:
+        print("⚠️ Not enough data to calculate score.")
         return None
 
-    last_close = close_prices.iloc[-1]
+    # Price momentum
+    short_return = (close_prices.iloc[-1] / close_prices.iloc[-5]) - 1
+    medium_return = (close_prices.iloc[-1] / close_prices.iloc[-20]) - 1
 
-    score = 0
-    if last_close > moving_avg_value:
-        score += 1
-    if last_close > close_prices.iloc[-5:].mean():
-        score += 1
-    if last_close > close_prices.iloc[-10:].mean():
-        score += 1
+    # Volatility
+    daily_returns = close_prices.pct_change().dropna()
+    volatility = daily_returns.rolling(window=20).std().iloc[-1]
 
-    return score
+    if pd.isna(volatility):
+        return None
+
+    # Normalize scores
+    momentum_score = min(max((short_return + medium_return) * 5000, 1), 100)
+    volatility_score = max(1, 100 - (volatility * 1000))
+    news_score = fetch_fda_news_sentiment(ticker)
+
+    # Final weighted score
+    final_score = int((0.3 * momentum_score) + 
+                      (0.3 * momentum_score) + 
+                      (0.2 * volatility_score) + 
+                      (0.2 * news_score))
+
+    return final_score
 
 
 
