@@ -125,9 +125,9 @@ def plot_scores(df):
 # Email the report
 def send_email_report():
     # Hardcoded email credentials (for testing)
-    email_user = animalcafe98398@gmail.com  # Your Gmail address
-    email_password = tqmk akth oxhl vgqk  # Your Google App Password
-    email_to = keshavkotteswaran@gmail.com  # Recipient's email
+    email_user = "animalcafe98398@gmail.com"  # Your Gmail address
+    email_password = "tqmk akth oxhl vgqk"  # Your Google App Password
+    email_to = "keshavkotteswaran@gmail.com"  # Recipient's email
 
     msg = MIMEMultipart()
     msg["From"] = email_user
