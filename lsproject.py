@@ -78,6 +78,13 @@ def fetch_data():
             "Ticker": ticker,
             "Buy/Sell Score": score,
             "Price": latest_price
+
+            results.append({
+    "Ticker": ticker,
+    "Buy/Sell Score": float(score),
+    "Price": float(latest_price)
+})
+
         })
 
     df = pd.DataFrame(results)
@@ -101,10 +108,14 @@ def generate_pdf(df):
     pdf.set_font("Arial", size=12)
 
     for _, row in df.iterrows():
-        pdf.cell(200, 10, txt=f"{row['Ticker']}: Score {row['Buy/Sell Score']:.2f} Price ${row['Price']:.2f}", ln=True)
+        ticker = str(row["Ticker"])
+        score = float(row["Buy/Sell Score"])
+        price = float(row["Price"])
+        pdf.cell(200, 10, txt=f"{ticker}: Score {score:.2f} Price ${price:.2f}", ln=True)
 
     pdf.output("analysis_report.pdf")
     print("✅ PDF generated successfully.")
+
 
 
 # Generate graph
