@@ -21,17 +21,24 @@ TICKERS = [
 # Calculate buy/sell score
 def calculate_buy_score(data):
     close_prices = data['Close']
+
+    # Ensure we are working with a Series
+    if isinstance(close_prices, pd.DataFrame):
+        close_prices = close_prices.iloc[:, 0]
+
     moving_avg = close_prices.rolling(window=20).mean()
     moving_avg_value = moving_avg.iloc[-1]
 
-    # Log and return None if moving average is NaN
+    # Make sure moving_avg_value is a scalar
+    if isinstance(moving_avg_value, pd.Series):
+        moving_avg_value = moving_avg_value.iloc[0]
+
     if pd.isna(moving_avg_value):
         print("⚠️ Not enough data to calculate moving average.")
         return None
 
     last_close = close_prices.iloc[-1]
 
-    # Calculate score
     score = 0
     if last_close > moving_avg_value:
         score += 1
@@ -41,6 +48,7 @@ def calculate_buy_score(data):
         score += 1
 
     return score
+
 
 
 
