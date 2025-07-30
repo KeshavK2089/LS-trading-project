@@ -55,13 +55,9 @@ def calculate_buy_score(data):
 
 # Fetch data for tickers
 def fetch_data():
+    results = []  # Store analysis results here
+
     for ticker in TICKERS:
-        print(f"Fetching data for {ticker}...")
-        data = yf.download(ticker, period="6mo", interval="1d")
-        process_data(ticker, data)
-
-
-    for ticker in tickers:
         print(f"Fetching data for {ticker}...")
         data = yf.download(ticker, period="6mo", interval="1d")
 
@@ -72,7 +68,7 @@ def fetch_data():
         score = calculate_buy_score(data)
 
         if score is None:
-            print(f"⚠️ Skipping {ticker} (no score)")
+            print(f"⚠️ Skipping {ticker} (not enough data)")
             continue
 
         latest_price = data["Close"].iloc[-1]  # Get most recent closing price
