@@ -20,66 +20,59 @@ TICKERS = [
 
 # Calculate buy/sell score
 def calculate_buy_score(data):
-    if data is None or data.empty or len(data) < 5:  # Require at least 5 days of data
+    close_prices = data['Close']
+    moving_avg = close_prices.rolling(window=20).mean()
+    moving_avg_value = moving_avg.iloc[-1]
+
+    # Log and return None if moving average is NaN
+    if pd.isna(moving_avg_value):
+        print("⚠️ Not enough data to calculate moving average.")
         return None
 
-    close_prices = data['Close'].dropna()
-    if close_prices.empty:
-        return None
+    last_close = close_prices.iloc[-1]
 
-    momentum = (close_prices.iloc[-1] - close_prices.iloc[0]) / close_prices.iloc[0]
-    volatility = close_prices.pct_change().std() * np.sqrt(252)
+    # Calculate score
+    score = 0
+    if last_close > moving_avg_value:
+        score += 1
+    if last_close > close_prices.iloc[-5:].mean():
+        score += 1
+    if last_close > close_prices.iloc[-10:].mean():
+        score += 1
 
-    # Calculate rolling average only if there are enough data points
-    if len(close_prices) >= 20:
-        moving_avg = close_prices.rolling(window=20).mean()
-        moving_avg_value = moving_avg.iloc[-1]
-        if pd.isna(moving_avg_value):
-            moving_avg_value = close_prices.mean()  # fallback to average price
-    else:
-        # Fallback: use simple average if less than 20 days of data
-        moving_avg_value = close_prices.mean()
+    return score
 
-    # Ensure scalar comparison
-    moving_avg_value = float(moving_avg_value)
-
-    score = (momentum * 50) + (1 / (volatility + 1e-6) * 30)
-
-    if close_prices.iloc[-1] > moving_avg_value:
-        score += 20
-
-    return min(max(score, 0), 100)
 
 
 
 
 # Fetch data for tickers
 def fetch_data():
+    tickers = ["AAPL", "MSFT", "GOOG"]  # Example tickers
     results = []
-    for ticker in TICKERS:
-        print(f"Processing {ticker}...")
+
+    for ticker in tickers:
         data = yf.download(ticker, period="6mo", interval="1d")
 
-        if data.empty or len(data) < 5:
-            print(f"⚠️ Skipping {ticker}: Not enough data.")
+        if data.empty:
+            print(f"⚠️ No data for {ticker}, skipping...")
             continue
 
         score = calculate_buy_score(data)
+
+        # Skip tickers with insufficient data (moving average was NaN)
         if score is None:
-            print(f"⚠️ Skipping {ticker}: Unable to calculate score.")
+            print(f"⚠️ Not enough data for {ticker} to calculate score, skipping...")
             continue
 
         results.append({
             "Ticker": ticker,
-            "Buy/Sell Score": score,
-            "Price": data['Close'].iloc[-1]
+            "Score": score,
+            "Last Close": data['Close'].iloc[-1]
         })
 
-    if not results:
-        print("⚠️ No valid tickers found.")
-        return pd.DataFrame(columns=["Ticker", "Buy/Sell Score", "Price"])
-
     return pd.DataFrame(results)
+
 
 
 # Generate a PDF report
