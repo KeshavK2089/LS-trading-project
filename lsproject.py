@@ -55,8 +55,11 @@ def calculate_buy_score(data):
 
 # Fetch data for tickers
 def fetch_data():
-    tickers = ["AAPL", "MSFT", "GOOGL"]  # Example tickers
-    results = []
+    for ticker in TICKERS:
+        print(f"Fetching data for {ticker}...")
+        data = yf.download(ticker, period="6mo", interval="1d")
+        process_data(ticker, data)
+
 
     for ticker in tickers:
         print(f"Fetching data for {ticker}...")
