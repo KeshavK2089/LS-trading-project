@@ -1,284 +1,154 @@
-"""
-LS_trading_project.py
-========================
 
+import yfinance as yf
+import pandas as pd
+import matplotlib.pyplot as plt
+import requests
+from fpdf import FPDF
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
+from datetime import datetime
+import numpy as np
 
-Key features:
+# List of top 50 life-science tickers
+TICKERS = [
+    'AMGN', 'GILD', 'REGN', 'VRTX', 'BIIB', 'MRNA', 'NBIX', 'INCY', 'ALNY', 'SAGE',
+    'PTCT', 'SRPT', 'EXEL', 'IONS', 'BMRN', 'HALO', 'ACAD', 'ARGX', 'BNTX', 'NVO',
+    'PFE', 'LLY', 'AZN', 'RHHBY', 'JNJ', 'MRK', 'SNY', 'BAYRY', 'NVS', 'GSK',
+    'ABBV', 'AMRX', 'TEVA', 'HZNP', 'PRGO', 'SUPN', 'XENE', 'VKTX', 'CRSP', 'EDIT',
+    'BLUE', 'BEAM', 'NTLA', 'ARWR', 'RNA', 'KRTX', 'RVMD', 'MDGL', 'AMYT', 'AGIO'
+]
 
-* **Data source:** The script downloads historic price data from
-  ``https://stooq.pl`` for a given list of ticker symbols.  This API
-  returns comma‑separated values for U.S. shares when suffixed with
-  ``.us``.
+# ClinicalTrials.gov API endpoint
+CLINICAL_TRIALS_API = "https://clinicaltrials.gov/api/query/study_fields"
 
-* **Technical indicators:** For each ticker the script calculates:
-  - A short and long simple moving average (SMA) to detect trend
-    direction.
-  - The relative strength index (RSI) to measure momentum and
-    overbought/oversold conditions.
-  - The moving average convergence divergence (MACD) and its signal
-    line to gauge trend momentum.
+def fetch_clinical_data(ticker):
+    params = {
+        'expr': ticker,
+        'fields': 'Phase,OverallStatus',
+        'min_rnk': 1,
+        'max_rnk': 100,
+        'fmt': 'json'
+    }
+    response = requests.get(CLINICAL_TRIALS_API, params=params)
+    data = response.json()
+    trials = data.get('StudyFieldsResponse', {}).get('StudyFields', [])
+    
+    phase_counts = {'Phase 1': 0, 'Phase 2': 0, 'Phase 3': 0}
+    for trial in trials:
+        phases = trial.get('Phase', [])
+        for phase in phases:
+            if 'Phase 3' in phase:
+                phase_counts['Phase 3'] += 1
+            elif 'Phase 2' in phase:
+                phase_counts['Phase 2'] += 1
+            elif 'Phase 1' in phase:
+                phase_counts['Phase 1'] += 1
+    
+    return phase_counts
 
-* **Signal generation:** A combined signal is produced when the short
-  SMA is above the long SMA **and** the RSI is above 50 **and** the
-  MACD is above its signal line.  A sell signal is generated when the
-  opposite is true.  Positions are shifted forward by one day to
-  simulate execution the day after a signal appears.
+def calculate_buy_sell_score(momentum, volatility, pipeline_sentiment, fda_impact, sector_weight=1.0):
+    return (
+        0.4 * momentum +
+        0.3 * (1 - volatility) +
+        0.2 * pipeline_sentiment * sector_weight +
+        0.1 * fda_impact
+    ) * 100
 
-* **Performance measurement:** The script tracks the cumulative return
-  of a buy‑and‑hold strategy versus the cumulative return of the
-  indicator‑driven strategy for each ticker.  It provides a simple
-  ranking by final strategy return percentage.
+def generate_report(df):
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    excel_file = f'quant_trading_report_{timestamp}.xlsx'
+    pdf_file = f'quant_trading_report_{timestamp}.pdf'
+    
+    df.to_excel(excel_file, index=False)
+    
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, txt="Life Science Quant Trading Report", ln=True, align="C")
+    
+    for i, row in df.iterrows():
+        pdf.cell(200, 10, txt=f"{row['Ticker']} - Score: {row['Buy/Sell Score']:.2f}", ln=True)
+    
+    plt.figure()
+    plt.bar(df['Ticker'], df['Buy/Sell Score'])
+    plt.xticks(rotation=90)
+    plt.ylabel('Buy/Sell Score')
+    plt.title('Quantitative Trading Scores')
+    plt.tight_layout()
+    chart_path = f"score_chart_{timestamp}.png"
+    plt.savefig(chart_path)
+    
+    pdf.add_page()
+    pdf.image(chart_path, x=10, y=20, w=180)
+    
+    pdf.output(pdf_file)
+    
+    return excel_file, pdf_file
 
-.. warning::
+def send_email(files, recipients):
+    sender = "keshavkotteswaran@gmail.com"
+    password = "vjco uaki hszw aefn"
+    server = smtplib.SMTP('smtp.gmail.com', 587)
 
-    This code is provided for **educational purposes only**.  Day
-    trading carries significant financial risk and most individual day
-    traders lose money【29948981333204†L654-L694】.  Quantitative
-    strategies can stop working when market conditions change or once
-    they become widely used【440896089455146†L268-L279】.  You should
-    consult a qualified financial advisor before making real trades.
+    for recipient in recipients:
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = recipient
+        msg['Subject'] = "Life Science Quant Trading Report"
+        
+        msg.attach(MIMEText("Attached is the latest quant trading report with FDA clinical data.", 'plain'))
+        
+        for file in files:
+            attachment = open(file, 'rb')
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload((attachment).read())
+            encoders.encode_base64(part)
+            part.add_header('Content-Disposition', f"attachment; filename= {file}")
+            msg.attach(part)
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, recipient, msg.as_string())
+        server.quit()
 
-Usage example::
-
-    from quant_trading_project import run_analysis, create_summary
-
-    tickers = ['PFE', 'JNJ', 'MRNA', 'LLY', 'AZN', 'BMY']
-    results = run_analysis(tickers, '2024-12-01', '2025-07-30')
-    summary = create_summary(results)
-    print(summary)
-
-You can extend this module by plugging the ``run_analysis`` and
-``create_summary`` functions into a web framework (e.g. Flask) or a
-scheduled job (e.g. cron or GitHub Actions) to run the analysis
-automatically.
-"""
-
-from __future__ import annotations
-
-import datetime as _dt
-import io as _io
-import typing as _t
-
-import pandas as _pd
-import requests as _requests
-
-
-def fetch_stooq(ticker: str) -> _pd.DataFrame:
-    """Download daily historical price data for a U.S. stock from Stooq.
-
-    Stooq returns data for U.S. equities when the symbol is suffixed
-    with ``.us``.  Column names are in Polish, so they are converted
-    to English for convenience.
-
-    Parameters
-    ----------
-    ticker: str
-        The stock ticker symbol (e.g. ``'PFE'``).
-
-    Returns
-    -------
-    pandas.DataFrame
-        A DataFrame with columns ``Date``, ``Open``, ``High``, ``Low``,
-        ``Close`` and ``Volume``.
-    """
-    url = f"https://stooq.pl/q/d/l/?s={ticker.lower()}.us&i=d"
-    response = _requests.get(url)
-    response.raise_for_status()
-    csv_data = response.text
-    df = _pd.read_csv(_io.StringIO(csv_data))
-    # Rename columns from Polish to English.
-    df.columns = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
-    df['Date'] = _pd.to_datetime(df['Date'])
-    return df
-
-
-def calculate_rsi(series: _pd.Series, period: int = 14) -> _pd.Series:
-    """Compute the Relative Strength Index (RSI).
-
-    Parameters
-    ----------
-    series : pandas.Series
-        Time series of prices.
-    period : int, optional
-        Look‑back period for the RSI, by default 14.
-
-    Returns
-    -------
-    pandas.Series
-        The RSI values.
-    """
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(window=period, min_periods=period).mean()
-    avg_loss = loss.rolling(window=period, min_periods=period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-
-def calculate_macd(series: _pd.Series,
-                   short: int = 12,
-                   long: int = 26,
-                   signal: int = 9) -> tuple[_pd.Series, _pd.Series]:
-    """Calculate the Moving Average Convergence Divergence (MACD).
-
-    Parameters
-    ----------
-    series : pandas.Series
-        Time series of prices.
-    short : int, optional
-        Span for the short EMA, by default 12.
-    long : int, optional
-        Span for the long EMA, by default 26.
-    signal : int, optional
-        Span for the signal line, by default 9.
-
-    Returns
-    -------
-    tuple[pandas.Series, pandas.Series]
-        A tuple containing the MACD and the MACD signal line.
-    """
-    ema_short = series.ewm(span=short, adjust=False).mean()
-    ema_long = series.ewm(span=long, adjust=False).mean()
-    macd = ema_short - ema_long
-    macd_signal = macd.ewm(span=signal, adjust=False).mean()
-    return macd, macd_signal
-
-
-def generate_signals(df: _pd.DataFrame,
-                     short_window: int = 20,
-                     long_window: int = 50) -> _pd.DataFrame:
-    """Add technical indicators and trading signals to a DataFrame.
-
-    This function computes a short and long SMA, the RSI, and the MACD
-    and uses them to generate trading signals.  A long (buy) signal is
-    generated when all of the following are true:
-
-    * ``SMA_short > SMA_long``
-    * ``RSI > 50``
-    * ``MACD > MACD_signal``
-
-    A short (sell) signal is generated when the opposite conditions
-    are true.
-
-    Parameters
-    ----------
-    df : pandas.DataFrame
-        DataFrame with at least a ``Close`` column.
-    short_window : int, optional
-        Look‑back period for the short SMA, by default 20.
-    long_window : int, optional
-        Look‑back period for the long SMA, by default 50.
-
-    Returns
-    -------
-    pandas.DataFrame
-        The original DataFrame with added indicator and signal columns.
-    """
-    df = df.copy()
-    # Calculate moving averages.
-    df['SMA_short'] = df['Close'].rolling(window=short_window).mean()
-    df['SMA_long'] = df['Close'].rolling(window=long_window).mean()
-    # Calculate RSI.
-    df['RSI'] = calculate_rsi(df['Close'])
-    # Calculate MACD and its signal line.
-    macd, macd_signal = calculate_macd(df['Close'])
-    df['MACD'] = macd
-    df['MACD_signal'] = macd_signal
-
-    # Generate signals.
-    df['Signal'] = 0
-    buy_condition = (df['SMA_short'] > df['SMA_long']) & (df['RSI'] > 50) & (df['MACD'] > df['MACD_signal'])
-    sell_condition = (df['SMA_short'] < df['SMA_long']) & (df['RSI'] < 50) & (df['MACD'] < df['MACD_signal'])
-    df.loc[buy_condition, 'Signal'] = 1
-    df.loc[sell_condition, 'Signal'] = -1
-
-    # Shift positions forward to simulate acting on next day’s open.
-    df['Position'] = df['Signal'].shift(1).fillna(0)
-    # Calculate daily and strategy returns.
-    df['Daily Return'] = df['Close'].pct_change()
-    df['Strategy Return'] = df['Position'] * df['Daily Return']
-    # Cumulative returns (starting from 1).
-    df['Cumulative Market Return'] = (1 + df['Daily Return']).cumprod()
-    df['Cumulative Strategy Return'] = (1 + df['Strategy Return']).cumprod()
-    return df
-
-
-def run_analysis(tickers: list[str], start_date: str, end_date: str,
-                 short_window: int = 20, long_window: int = 50) -> dict[str, _pd.DataFrame]:
-    """Fetch data, calculate indicators and run backtest for multiple tickers.
-
-    Parameters
-    ----------
-    tickers : list[str]
-        A list of stock ticker symbols.
-    start_date : str
-        Start date in ``YYYY-MM-DD`` format.
-    end_date : str
-        End date in ``YYYY-MM-DD`` format.
-    short_window : int, optional
-        Look‑back period for the short SMA, by default 20.
-    long_window : int, optional
-        Look‑back period for the long SMA, by default 50.
-
-    Returns
-    -------
-    dict[str, pandas.DataFrame]
-        A dictionary mapping each ticker to its enriched DataFrame.
-    """
-    start_dt = _pd.to_datetime(start_date)
-    end_dt = _pd.to_datetime(end_date)
-    results: dict[str, _pd.DataFrame] = {}
-    for ticker in tickers:
-        data = fetch_stooq(ticker)
-        data = data[(data['Date'] >= start_dt) & (data['Date'] <= end_dt)]
-        if data.empty:
-            continue
-        enriched = generate_signals(data, short_window=short_window, long_window=long_window)
-        results[ticker] = enriched
-    return results
-
-
-def create_summary(results: dict[str, _pd.DataFrame]) -> _pd.DataFrame:
-    """Summarize strategy performance across multiple tickers.
-
-    Parameters
-    ----------
-    results : dict[str, pandas.DataFrame]
-        Output from ``run_analysis``.
-
-    Returns
-    -------
-    pandas.DataFrame
-        A summary table containing each ticker and its final market
-        return, final strategy return and strategy return percentage.
-    """
-    summary_rows: list[dict[str, _t.Any]] = []
-    for ticker, df in results.items():
-        if df.empty:
-            continue
-        final_market = df['Cumulative Market Return'].iloc[-1]
-        final_strategy = df['Cumulative Strategy Return'].iloc[-1]
-        summary_rows.append({
+def main():
+    results = []
+    
+    for ticker in TICKERS:
+        data = yf.download(ticker, period="6mo", interval="1d")
+        momentum = (data['Close'][-1] - data['Close'][0]) / data['Close'][0]
+        volatility = data['Close'].pct_change().std()
+        
+        phase_counts = fetch_clinical_data(ticker)
+        pipeline_sentiment = (phase_counts['Phase 1']*0.25 + phase_counts['Phase 2']*0.5 + phase_counts['Phase 3']*1.0) / 10
+        
+        fda_impact = 0.05 if phase_counts['Phase 3'] > 0 else 0
+        
+        sector_weight = 1.2 if ticker in ['BIIB', 'VRTX', 'MRNA', 'BMRN', 'REGN'] else 1.0
+        
+        score = calculate_buy_sell_score(momentum, volatility, pipeline_sentiment, fda_impact, sector_weight)
+        
+        results.append({
             'Ticker': ticker,
-            'FinalMarketReturn': final_market,
-            'FinalStrategyReturn': final_strategy,
-            'StrategyReturnPct': (final_strategy - 1) * 100
+            'Momentum': momentum,
+            'Volatility': volatility,
+            'Active Trials': sum(phase_counts.values()),
+            'Phase 3 Trials': phase_counts['Phase 3'],
+            'Pipeline Sentiment': pipeline_sentiment,
+            'FDA Impact': fda_impact,
+            'Buy/Sell Score': score
         })
-    summary = _pd.DataFrame(summary_rows)
-    if summary.empty:
-        return summary
-    summary['StrategyReturnPct'] = summary['StrategyReturnPct'].round(2)
-    return summary.sort_values(by='StrategyReturnPct', ascending=False).reset_index(drop=True)
+    
+    df = pd.DataFrame(results)
+    excel_file, pdf_file = generate_report(df)
+    
+    recipients = ["kotteswaran.k@northeastern.edu"]
+    send_email([excel_file, pdf_file], recipients)
 
-
-if __name__ == '__main__':  # pragma: no cover
-    # Example usage when running this script directly.  Fetch the
-    # specified tickers and print a performance summary.
-    tickers = ['PFE', 'JNJ', 'MRNA', 'LLY', 'AZN', 'BMY']
-    start_date = '2024-12-01'
-    end_date = '2025-07-30'
-    print(f"Running analysis for {tickers} from {start_date} to {end_date}...")
-    result_data = run_analysis(tickers, start_date, end_date)
-    summary_table = create_summary(result_data)
-    print(summary_table)
+if __name__ == '__main__':
+    main()
