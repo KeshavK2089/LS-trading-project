@@ -2,10 +2,6 @@
 LS_trading_project.py
 ========================
 
-This module provides a simple framework for running a momentum‑style
-quantitative trading analysis on pharmaceutical stocks.  It fetches daily
-price data from the Stooq website, calculates a set of technical
-indicators and generates buy/sell signals based on those indicators.
 
 Key features:
 
