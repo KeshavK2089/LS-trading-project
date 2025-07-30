@@ -124,32 +124,35 @@ def plot_scores(df):
 
 # Email the report
 def send_email_report():
-    email_user = os.getenv("EMAIL_USER")
-    email_password = os.getenv("EMAIL_PASSWORD")
-    email_to = os.getenv("EMAIL_TO")
-
-    if not email_user or not email_password or not email_to:
-        print("⚠️ Email credentials are not set. Skipping email.")
-        return
+    # Hardcoded email credentials (for testing)
+    email_user = animalcafe98398@gmail.com  # Your Gmail address
+    email_password = tqmk akth oxhl vgqk  # Your Google App Password
+    email_to = keshavkotteswaran@gmail.com  # Recipient's email
 
     msg = MIMEMultipart()
     msg["From"] = email_user
     msg["To"] = email_to
     msg["Subject"] = "Daily Life Science Trading Analysis"
 
-    for file in ["trading_analysis.pdf", "trading_chart.png"]:
-        with open(file, "rb") as f:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(f.read())
-            encoders.encode_base64(part)
-            part.add_header("Content-Disposition", f"attachment; filename={file}")
-            msg.attach(part)
+    # Attach PDF and chart
+    for file in ["analysis_report.pdf", "trading_chart.png"]:
+        if os.path.exists(file):
+            with open(file, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", f"attachment; filename={file}")
+                msg.attach(part)
+        else:
+            print(f"⚠️ File not found: {file}")
 
+    # Send email using Gmail SMTP
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.starttls()
         server.login(email_user, email_password)
         server.sendmail(email_user, email_to, msg.as_string())
         print("✅ Email sent successfully!")
+
 
 # Main function
 def main():
