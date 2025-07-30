@@ -1,2 +1,10 @@
+yfinance
 pandas
-requests
+numpy
+matplotlib
+openpyxl
+reportlab
+smtplib
+email-validator
+scipy
+fda-api-client
