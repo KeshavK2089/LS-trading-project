@@ -136,16 +136,30 @@ def main():
         plot_scores(df)
         generate_pdf(df)
 
-    # Move any existing outputs into the 'site' folder (NEW FIX)
+import shutil
+
+def move_outputs_to_site():
     output_dir = Path("site")
-    output_dir.mkdir(exist_ok=True)
+    output_dir.mkdir(exist_ok=True)  # Always ensure site folder exists
 
-    for file_name in ("analysis_report.pdf", "trading_chart.png"):
-        src = Path(file_name)
-        if src.exists():  # <--- prevents FileNotFoundError
-            src.rename(output_dir / src.name)
+    # List of files to move (add more if needed)
+    output_files = ["analysis_report.pdf", "trading_chart.png"]
 
-    # Create a basic index.html if any files exist
+    for fname in output_files:
+        src = Path(fname)
+        dest = output_dir / src.name
+        if src.exists():
+            shutil.move(str(src), str(dest))
+            print(f"Moved {src} to {dest}")
+        else:
+            print(f"{src} does NOT exist, skipping.")
+
+    # Build links for index.html only for files that actually exist
+    links = ""
+    if (output_dir / "analysis_report.pdf").exists():
+        links += "<li><a href='analysis_report.pdf'>PDF Report</a></li>"
+    if (output_dir / "trading_chart.png").exists():
+        links += "<li><a href='trading_chart.png'>Chart</a></li>"
     index_html = output_dir / "index.html"
     index_html.write_text(f"""
     <html>
@@ -154,13 +168,22 @@ def main():
         <h1>Life Science Trading Analysis</h1>
         <p>Last updated: {pd.Timestamp.now().date()}</p>
         <ul>
-          {"<li><a href='analysis_report.pdf'>PDF Report</a></li>" if (output_dir / "analysis_report.pdf").exists() else ""}
-          {"<li><a href='trading_chart.png'>Chart</a></li>" if (output_dir / "trading_chart.png").exists() else ""}
+          {links}
         </ul>
       </body>
     </html>
     """)
 
+# ...all your other code remains unchanged...
+
+def main():
+    df = fetch_data()
+    if df.empty:
+        print("⚠️ No data available.")
+    else:
+        plot_scores(df)
+        generate_pdf(df)
+    move_outputs_to_site()  # <-- always call at the end
 
 if __name__ == "__main__":
     main()
