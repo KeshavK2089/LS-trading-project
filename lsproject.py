@@ -26,15 +26,19 @@ def calculate_buy_score(data):
     close_prices = data['Close']
     momentum = (close_prices.iloc[-1] - close_prices.iloc[0]) / close_prices.iloc[0]
     volatility = close_prices.pct_change().std() * np.sqrt(252)
-    moving_avg = close_prices.rolling(window=20).mean().iloc[-1]  # ensure single value
+
+    # FIX: Extract single numeric value from the rolling average
+    moving_avg = close_prices.rolling(window=20).mean()
+    moving_avg_value = moving_avg.iloc[-1] if not moving_avg.empty else 0
 
     score = (momentum * 50) + (1 / (volatility + 1e-6) * 30)
 
-    # FIXED: Compare single value to single value
-    if close_prices.iloc[-1] > float(moving_avg):  
+    # FIX: Now comparing scalars
+    if close_prices.iloc[-1] > moving_avg_value:
         score += 20
 
     return min(max(score, 0), 100)
+
 
 
 # Fetch data for tickers
