@@ -1,0 +1,35 @@
+name: Build & Publish Life-Science Report
+
+on:
+  # rebuild manually or on a schedule; here we do every weekday at 08:00 UTC
+  schedule:
+    - cron: '0 8 * * 1-5'
+  workflow_dispatch:        # allows you to click “Run workflow” button
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the pipeline
+        run: python lsproject.py
+
+      # ---------- publish the site folder to gh-pages ----------
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site          # <— folder we created in Part 1
+          publish_branch: gh-pages
+          keep_files: true             # keeps older reports if you link them
