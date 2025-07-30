@@ -5,3 +5,5 @@ matplotlib
 openpyxl
 reportlab
 scipy
+fpdf2
+requests
