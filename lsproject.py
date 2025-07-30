@@ -53,7 +53,6 @@ def calculate_buy_score(data):
 
 
 
-
 # Fetch data for tickers
 def fetch_data():
     tickers = ["AAPL", "MSFT", "GOOGL"]  # Example tickers
@@ -76,21 +75,15 @@ def fetch_data():
         latest_price = data["Close"].iloc[-1]  # Get most recent closing price
         results.append({
             "Ticker": ticker,
-            "Buy/Sell Score": score,
-            "Price": latest_price
-})
-            results.append({
-    "Ticker": ticker,
-    "Buy/Sell Score": float(score),
-    "Price": float(latest_price)
-})
-
-    
+            "Buy/Sell Score": float(score),
+            "Price": float(latest_price)
+        })
 
     df = pd.DataFrame(results)
 
     if df.empty:
         print("⚠️ No data available for any ticker.")
+    
     return df
 
 
