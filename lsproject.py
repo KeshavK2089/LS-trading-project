@@ -183,11 +183,16 @@ def fetch_data():
     return pd.DataFrame(results)
 
 def export_to_excel(df):
+    # If DataFrame is empty, create one with a message
+    if df.empty:
+        df = pd.DataFrame([{"Message": "No data available for any ticker."}])
     df.to_excel("life_science_trading_analysis.xlsx", index=False)
     print("Excel file saved as life_science_trading_analysis.xlsx")
 
+
 def main():
     df = fetch_data()
-    export_to_excel(df)   # Always export, even if empty
+    export_to_excel(df)  # Always create file, even if empty
     if df.empty:
         print("⚠️ No data available.")
+
