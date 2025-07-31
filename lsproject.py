@@ -183,18 +183,11 @@ def fetch_data():
     return pd.DataFrame(results)
 
 def export_to_excel(df):
-    """
-    Save results DataFrame to Excel.
-    """
     df.to_excel("life_science_trading_analysis.xlsx", index=False)
     print("Excel file saved as life_science_trading_analysis.xlsx")
 
 def main():
     df = fetch_data()
+    export_to_excel(df)   # Always export, even if empty
     if df.empty:
         print("⚠️ No data available.")
-    else:
-        export_to_excel(df)
-
-if __name__ == "__main__":
-    main()
