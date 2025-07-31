@@ -196,3 +196,5 @@ def main():
     if df.empty:
         print("⚠️ No data available.")
 
+if __name__ == "__main__":
+    main()
