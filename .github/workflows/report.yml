@@ -25,6 +25,12 @@ jobs:
       - name: Run the pipeline
         run: python lsproject.py
 
+      - name: Upload site folder as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site
+
       # ---------- publish the site folder to gh-pages ----------
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
