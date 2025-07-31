@@ -1,12 +1,9 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from fpdf import FPDF
 from textblob import TextBlob
 import requests
 import os
-from pathlib import Path
 
 # Top 50 life science trading tickers
 TICKERS = [
@@ -17,8 +14,7 @@ TICKERS = [
     "QURE", "SANA", "TNYA", "VERV", "XENE", "ZYME", "GLYC", "CNTB", "ASND", "RVNC"
 ]
 
-NEWS_API_KEY = os.getenv("NEWS_API_KEY", "YOUR_NEWS_API_KEY")
-
+NEWS_API_KEY = os.getenv("NEWS_API_KEY", "db26f5af4bcb4870aaccc9026dd51f27")
 
 def fetch_fda_news_sentiment(ticker):
     news_score = 50  # neutral default
@@ -31,38 +27,42 @@ def fetch_fda_news_sentiment(ticker):
         scores = []
         for article in articles[:5]:
             headline = article.get("title", "")
-            if headline:
+            if isinstance(headline, str) and len(headline) > 0:
                 sentiment = TextBlob(headline).sentiment.polarity
                 scores.append(sentiment)
 
-        if scores:
+        if len(scores) > 0:
             avg_sent = sum(scores) / len(scores)
-            news_score = int((avg_sent + 1) * 50)  # scale -1→1 to 0→100
+            news_score = int((avg_sent + 1) * 50)
     except Exception:
         pass
 
     return max(1, min(news_score, 100))
-
 
 def calculate_buy_score(data, ticker):
     close_prices = data["Close"]
     if isinstance(close_prices, pd.DataFrame):
         close_prices = close_prices.iloc[:, 0]
 
-    if len(close_prices) < 20:
+    if len(close_prices) < 21:  # Need at least 21 rows for 20-period rolling
         return None
 
     short_return = (close_prices.iloc[-1] / close_prices.iloc[-5]) - 1
     medium_return = (close_prices.iloc[-1] / close_prices.iloc[-20]) - 1
 
     daily_returns = close_prices.pct_change().dropna()
-    volatility = daily_returns.rolling(window=20).std().iloc[-1]
+    if len(daily_returns) < 20:
+        return None
 
-    if pd.isna(volatility) or volatility == 0:
+    volatility_series = daily_returns.rolling(window=20).std()
+    if len(volatility_series) == 0:
+        return None
+    volatility = volatility_series.iloc[-1]
+    if pd.isna(volatility) or float(volatility) == 0.0:
         return None
 
     momentum_score = min(max((short_return + medium_return) * 5000, 1), 100)
-    volatility_score = max(1, min(100, 100 - (volatility * 1000)))
+    volatility_score = max(1, min(100, 100 - (float(volatility) * 1000)))
     news_score = fetch_fda_news_sentiment(ticker)
 
     final_score = int(
@@ -70,120 +70,146 @@ def calculate_buy_score(data, ticker):
     )
     return final_score
 
-
 def fetch_data():
     results = []
+    skipped_tickers = []
     for ticker in TICKERS:
+        print(f"\n==== {ticker} ====")
         data = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
+        print(f"Downloaded {len(data)} rows for {ticker}")
+        print("Columns:", list(data.columns))
+        print(data.head())
+
         if data.empty:
+            print(" - Data is empty. Skipping.")
+            skipped_tickers.append((ticker, "empty"))
+            continue
+        if len(data) < 21:
+            print(f" - Not enough rows ({len(data)}). Need at least 21. Skipping.")
+            skipped_tickers.append((ticker, f"rows={len(data)}"))
             continue
 
         score = calculate_buy_score(data, ticker)
         if score is None:
+            print(" - Buy score is None. Skipping.")
+            skipped_tickers.append((ticker, "buy_score_None"))
             continue
 
-        latest_price = data["Close"].iloc[-1]
+        quant_indicators = calculate_quant_indicators(data)
+        print("Quant indicators:", quant_indicators)
+
+        latest_price = float(data["Close"].iloc[-1])
         results.append({
             "Ticker": ticker,
             "Buy/Sell Score": float(score),
-            "Price": float(latest_price)
+            "Price": float(latest_price),
+            "MA_20": quant_indicators['MA_20'],
+            "RSI_14": quant_indicators['RSI_14'],
+            "MACD": quant_indicators['MACD'],
+            "Boll_Band_Width": quant_indicators['Boll_Band_Width'],
+            "ATR_14": quant_indicators['ATR_14'],
         })
+
+    if skipped_tickers:
+        print("\nSummary of skipped tickers and reasons:")
+        for ticker, reason in skipped_tickers:
+            print(f" - {ticker}: {reason}")
+    else:
+        print("\nAll tickers processed!")
 
     return pd.DataFrame(results)
 
+def calculate_quant_indicators(data):
+    # Defensive: If data is empty or missing needed columns, return nan indicators
+    required_cols = {'Close', 'High', 'Low'}
+    if (
+        data is None
+        or data.empty
+        or not required_cols.issubset(data.columns)
+        or len(data) < 21
+    ):
+        print(" - Data missing required columns or too short. Returning all NaN quant indicators.")
+        return {
+            'MA_20': np.nan,
+            'RSI_14': np.nan,
+            'MACD': np.nan,
+            'Boll_Band_Width': np.nan,
+            'ATR_14': np.nan,
+        }
 
-def generate_pdf(df):
-    required_cols = {"Ticker", "Buy/Sell Score", "Price"}
-    if not required_cols.issubset(df.columns):
-        return
+    indicators = {}
+    close = data['Close']
 
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    # 1. 20-day Moving Average
+    ma20_series = close.rolling(window=20).mean()
+    indicators['MA_20'] = float(ma20_series.iloc[-1]) if len(ma20_series) > 0 else np.nan
 
-    pdf.cell(200, 10, txt="Life Science Trading Analysis", ln=True, align="C")
-    pdf.ln(10)
+    # 2. 14-day RSI
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(window=14).mean()
+    avg_loss = loss.rolling(window=14).mean()
+    ag = float(avg_gain.iloc[-1]) if len(avg_gain) > 0 else np.nan
+    al = float(avg_loss.iloc[-1]) if len(avg_loss) > 0 else np.nan
+    if al == 0 or np.isnan(al):
+        rsi = 100
+    else:
+        rs = ag / al
+        rsi = 100 - (100 / (1 + rs))
+    indicators['RSI_14'] = rsi
 
-    for _, row in df.iterrows():
-        pdf.cell(
-            200, 10,
-            txt=f"{row['Ticker']}: Score {row['Buy/Sell Score']:.2f} Price ${row['Price']:.2f}",
-            ln=True
-        )
+    # 3. MACD (12,26,9)
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    indicators['MACD'] = float(macd.iloc[-1]) if len(macd) > 0 else np.nan
 
-    pdf.output("analysis_report.pdf")
+    # 4. Bollinger Band width (20, 2)
+    std20 = close.rolling(window=20).std()
+    ma20_series = close.rolling(window=20).mean()  # Recreate to be sure
+    upper = ma20_series + (2 * std20)
+    lower = ma20_series - (2 * std20)
+
+    upper_last = upper.iloc[-1]
+    lower_last = lower.iloc[-1]
+
+    if isinstance(upper_last, pd.Series):
+        upper_last = upper_last.iloc[0]
+    if isinstance(lower_last, pd.Series):
+        lower_last = lower_last.iloc[0]
+
+    if (
+        len(upper) > 0 and len(lower) > 0
+        and not pd.isna(upper_last) and not pd.isna(lower_last)
+    ):
+        indicators['Boll_Band_Width'] = float(upper_last - lower_last)
+    else:
+        indicators['Boll_Band_Width'] = np.nan
+
+    # 5. ATR (14-day)
+    high = data['High']
+    low = data['Low']
+    prev_close = close.shift(1)
+    tr = pd.concat([high - low, abs(high - prev_close), abs(low - prev_close)], axis=1).max(axis=1)
+    atr_series = tr.rolling(window=14).mean()
+    indicators['ATR_14'] = float(atr_series.iloc[-1]) if len(atr_series) > 0 else np.nan
+
+    return indicators
 
 
-def plot_scores(df):
-    if df.empty:
-        return
-    plt.figure(figsize=(12, 6))
-    plt.bar(df["Ticker"], df["Buy/Sell Score"])
-    plt.xticks(rotation=90)
-    plt.xlabel("Ticker")
-    plt.ylabel("Buy/Sell Score (0-100)")
-    plt.title("Life Science Buy/Sell Analysis")
-    plt.tight_layout()
-    plt.savefig("trading_chart.png")
-
+def export_to_excel(df):
+    df.to_excel("life_science_trading_analysis.xlsx", index=False)
+    print("Excel file saved as life_science_trading_analysis.xlsx")
 
 def main():
     df = fetch_data()
     if df.empty:
         print("⚠️ No data available.")
     else:
-        plot_scores(df)
-        generate_pdf(df)
-
-import shutil
-
-def move_outputs_to_site():
-    output_dir = Path("site")
-    output_dir.mkdir(exist_ok=True)  # Always ensure site folder exists
-
-    # List of files to move (add more if needed)
-    output_files = ["analysis_report.pdf", "trading_chart.png"]
-
-    for fname in output_files:
-        src = Path(fname)
-        dest = output_dir / src.name
-        if src.exists():
-            shutil.move(str(src), str(dest))
-            print(f"Moved {src} to {dest}")
-        else:
-            print(f"{src} does NOT exist, skipping.")
-
-    # Build links for index.html only for files that actually exist
-    links = ""
-    if (output_dir / "analysis_report.pdf").exists():
-        links += "<li><a href='analysis_report.pdf'>PDF Report</a></li>"
-    if (output_dir / "trading_chart.png").exists():
-        links += "<li><a href='trading_chart.png'>Chart</a></li>"
-    index_html = output_dir / "index.html"
-    index_html.write_text(f"""
-    <html>
-      <head><title>Life Science Report</title></head>
-      <body style="font-family: Arial; padding: 2rem;">
-        <h1>Life Science Trading Analysis</h1>
-        <p>Last updated: {pd.Timestamp.now().date()}</p>
-        <ul>
-          {links}
-        </ul>
-      </body>
-    </html>
-    """)
-
-# ...all your other code remains unchanged...
-
-def main():
-    df = fetch_data()
-    if df.empty:
-        print("⚠️ No data available.")
-    else:
-        plot_scores(df)
-        generate_pdf(df)
-    move_outputs_to_site()  # <-- always call at the end
+        export_to_excel(df)
 
 if __name__ == "__main__":
     main()
